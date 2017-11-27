@@ -16,6 +16,8 @@
 
 package com.google.android.apps.muzei;
 
+import static android.graphics.Color.BLACK;
+
 import android.app.WallpaperColors;
 import android.app.WallpaperManager;
 import android.arch.lifecycle.Lifecycle;
@@ -30,10 +32,13 @@ import android.content.IntentFilter;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
 import android.support.v4.os.UserManagerCompat;
@@ -42,7 +47,6 @@ import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.ViewConfiguration;
-
 import com.google.android.apps.muzei.api.MuzeiContract;
 import com.google.android.apps.muzei.event.ArtDetailOpenedClosedEvent;
 import com.google.android.apps.muzei.event.WallpaperSizeChangedEvent;
@@ -57,13 +61,12 @@ import com.google.android.apps.muzei.wallpaper.NetworkChangeObserver;
 import com.google.android.apps.muzei.wallpaper.WallpaperAnalytics;
 import com.google.android.apps.muzei.wearable.WearableController;
 import com.google.android.apps.muzei.widget.WidgetUpdater;
-
+import java.io.FileNotFoundException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import net.rbgrn.android.glwallpaperservice.GLWallpaperService;
-
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-
-import java.io.FileNotFoundException;
 
 public class MuzeiWallpaperService extends GLWallpaperService implements LifecycleOwner {
     private static final String TAG = "MuzeiWallpaperService";
@@ -162,6 +165,10 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
             mEngineLifecycle.addObserver(new WallpaperAnalytics(MuzeiWallpaperService.this));
             mEngineLifecycle.addObserver(new LockscreenObserver(MuzeiWallpaperService.this, this));
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+
+                getContentResolver().registerContentObserver(Settings.Secure.getUriFor("night_display_activated"),
+                    true, nightModeObserver);
+
                 mEngineLifecycle.addObserver(new LifecycleObserver() {
                     private ContentObserver mContentObserver;
 
@@ -227,12 +234,43 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
             }
         }
 
+        boolean isNightMode() {
+            return Settings.Secure.getInt(getContentResolver(),
+                "night_display_activated", 0) == 1;
+        }
+
+        ContentObserver nightModeObserver = new ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                super.onChange(selfChange, uri);
+
+                final String setting = uri == null ? null : uri.getLastPathSegment();
+                if (setting != null) {
+                    notifyColorsChanged();
+                }
+            }
+        };
+
         @RequiresApi(api = 27)
         @Override
         public WallpaperColors onComputeColors() {
-            return mCurrentArtwork != null
+            if(isNightMode()) {
+                Color black = Color.valueOf(BLACK);
+                WallpaperColors colors = new WallpaperColors(black, black, black);
+
+                try {
+                    Method setHint = WallpaperColors.class.getMethod("setColorHints", int.class);
+                    setHint.invoke(colors, 6);
+                } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                    e.printStackTrace();
+                }
+
+                return colors;
+            } else {
+                return mCurrentArtwork != null
                     ? WallpaperColors.fromBitmap(mCurrentArtwork)
                     : super.onComputeColors();
+            }
         }
 
         @Override
