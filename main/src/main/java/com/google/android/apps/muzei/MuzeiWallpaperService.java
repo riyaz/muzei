@@ -17,6 +17,9 @@
 package com.google.android.apps.muzei;
 
 import static android.graphics.Color.BLACK;
+import static android.media.AudioManager.STREAM_NOTIFICATION;
+import static android.media.AudioManager.STREAM_RING;
+import static android.media.AudioManager.STREAM_SYSTEM;
 
 import android.app.WallpaperColors;
 import android.app.WallpaperManager;
@@ -29,15 +32,18 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
@@ -51,6 +57,7 @@ import com.google.android.apps.muzei.api.MuzeiContract;
 import com.google.android.apps.muzei.event.ArtDetailOpenedClosedEvent;
 import com.google.android.apps.muzei.event.WallpaperSizeChangedEvent;
 import com.google.android.apps.muzei.notifications.NotificationUpdater;
+import com.google.android.apps.muzei.quicksettings.DarkBarTileService;
 import com.google.android.apps.muzei.render.ImageUtil;
 import com.google.android.apps.muzei.render.MuzeiBlurRenderer;
 import com.google.android.apps.muzei.render.RealRenderController;
@@ -73,6 +80,9 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
 
     private LifecycleRegistry mLifecycle;
     private BroadcastReceiver mUnlockReceiver;
+    private SharedPreferences mPref;
+
+    SharedPreferences.OnSharedPreferenceChangeListener listene = null;
 
     @Override
     public Engine onCreateEngine() {
@@ -82,6 +92,7 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
     @Override
     public void onCreate() {
         super.onCreate();
+        mPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         mLifecycle = new LifecycleRegistry(this);
         mLifecycle.addObserver(new WallpaperAnalytics(this));
         mLifecycle.addObserver(new SourceManager(this));
@@ -106,6 +117,8 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
             IntentFilter filter = new IntentFilter(Intent.ACTION_USER_UNLOCKED);
             registerReceiver(mUnlockReceiver, filter);
         }
+
+
     }
 
     @NonNull
@@ -168,6 +181,18 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
 
                 getContentResolver().registerContentObserver(Settings.Secure.getUriFor("night_display_activated"),
                     true, nightModeObserver);
+
+                listene = new SharedPreferences.OnSharedPreferenceChangeListener() {
+                    @Override
+                    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+                        Log.d("", "night 3 " + key);
+                        if(key.equals(DarkBarTileService.PREF_DARK_BAR)) {
+                            notifyColorsChanged();
+                        }
+                    }
+                };
+
+                mPref.registerOnSharedPreferenceChangeListener(listene);
 
                 mEngineLifecycle.addObserver(new LifecycleObserver() {
                     private ContentObserver mContentObserver;
@@ -239,6 +264,11 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
                 "night_display_activated", 0) == 1;
         }
 
+        @RequiresApi(api = Build.VERSION_CODES.N)
+        boolean darkBarEnabled() {
+            return mPref.getBoolean(DarkBarTileService.PREF_DARK_BAR, false);
+        }
+
         ContentObserver nightModeObserver = new ContentObserver(new Handler(Looper.getMainLooper())) {
             @Override
             public void onChange(boolean selfChange, Uri uri) {
@@ -246,15 +276,30 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
 
                 final String setting = uri == null ? null : uri.getLastPathSegment();
                 if (setting != null) {
+                    updateSoundProfile();
                     notifyColorsChanged();
                 }
             }
         };
 
+        private void updateSoundProfile() {
+            AudioManager audioManager = (AudioManager) getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+            if(isNightMode()) {
+                audioManager.setStreamVolume(STREAM_SYSTEM, 3, 0);
+                audioManager.setStreamVolume(STREAM_RING, 3, 0);
+                audioManager.setStreamVolume(STREAM_NOTIFICATION, 3, 0);
+            } else {
+                audioManager.setStreamVolume(STREAM_SYSTEM, audioManager.getStreamMaxVolume(STREAM_SYSTEM), 0);
+                audioManager.setStreamVolume(STREAM_RING, audioManager.getStreamMaxVolume(STREAM_RING), 0);
+                audioManager.setStreamVolume(STREAM_NOTIFICATION, audioManager.getStreamMaxVolume(STREAM_NOTIFICATION), 0);
+
+            }
+        }
+
         @RequiresApi(api = 27)
         @Override
         public WallpaperColors onComputeColors() {
-            if(isNightMode()) {
+            if(isNightMode() || darkBarEnabled()) {
                 Color black = Color.valueOf(BLACK);
                 WallpaperColors colors = new WallpaperColors(black, black, black);
 

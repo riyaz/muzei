@@ -105,6 +105,15 @@
             </intent-filter>
         </service>
 
+        <service android:name="com.google.android.apps.muzei.quicksettings.DarkBarTileService"
+            android:icon="@drawable/ic_circle_empty_24dp"
+            android:label="@string/action_dark_bar"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- AppWidget -->
 
         <receiver android:name="com.google.android.apps.muzei.widget.MuzeiAppWidgetProvider">
