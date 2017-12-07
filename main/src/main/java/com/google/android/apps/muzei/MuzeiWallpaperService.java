@@ -17,10 +17,13 @@
 package com.google.android.apps.muzei;
 
 import static android.graphics.Color.BLACK;
+import static android.graphics.Color.WHITE;
 import static android.media.AudioManager.STREAM_NOTIFICATION;
 import static android.media.AudioManager.STREAM_RING;
 import static android.media.AudioManager.STREAM_SYSTEM;
 
+import android.annotation.TargetApi;
+import android.app.NotificationManager;
 import android.app.WallpaperColors;
 import android.app.WallpaperManager;
 import android.arch.lifecycle.Lifecycle;
@@ -276,14 +279,31 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
 
                 final String setting = uri == null ? null : uri.getLastPathSegment();
                 if (setting != null) {
+                    Log.d(TAG, "Night mode changed");
                     updateSoundProfile();
                     notifyColorsChanged();
                 }
             }
         };
 
+        @TargetApi(Build.VERSION_CODES.M)
         private void updateSoundProfile() {
+            Log.d(TAG, "updateSoundProfile - isNightMode = " + isNightMode());
+
+            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+            if (!mNotificationManager.isNotificationPolicyAccessGranted()) {
+                Intent intent = new Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+                startActivity(intent);
+                return;
+            }
+
+            int dndMode = mNotificationManager.getCurrentInterruptionFilter();
+
+            Log.d(TAG, "DND Mode " + dndMode);
+
             AudioManager audioManager = (AudioManager) getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+
             if(isNightMode()) {
                 audioManager.setStreamVolume(STREAM_SYSTEM, 3, 0);
                 audioManager.setStreamVolume(STREAM_RING, 3, 0);
@@ -294,12 +314,19 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
                 audioManager.setStreamVolume(STREAM_NOTIFICATION, audioManager.getStreamMaxVolume(STREAM_NOTIFICATION), 0);
 
             }
+
+            mNotificationManager.setInterruptionFilter(dndMode);
         }
 
         @RequiresApi(api = 27)
         @Override
         public WallpaperColors onComputeColors() {
-            if(isNightMode() || darkBarEnabled()) {
+            Log.d(TAG, "onComputeColors - isNightMode = " + isNightMode()
+                + " darkBarEnabled = " + darkBarEnabled());
+
+            return getColor(isNightMode() || darkBarEnabled());
+
+            /*if(isNightMode() || darkBarEnabled()) {
                 Color black = Color.valueOf(BLACK);
                 WallpaperColors colors = new WallpaperColors(black, black, black);
 
@@ -315,7 +342,25 @@ public class MuzeiWallpaperService extends GLWallpaperService implements Lifecyc
                 return mCurrentArtwork != null
                     ? WallpaperColors.fromBitmap(mCurrentArtwork)
                     : super.onComputeColors();
+            }*/
+        }
+
+        @RequiresApi(api = 27)
+        private WallpaperColors getColor(boolean dark) {
+            Log.d(TAG, "getColor - dark = " + dark);
+            Color black = Color.valueOf(dark ? BLACK : WHITE);
+            WallpaperColors colors = new WallpaperColors(black, black, black);
+
+            if(dark) {
+                try {
+                    Method setHint = WallpaperColors.class.getMethod("setColorHints", int.class);
+                    setHint.invoke(colors, 6);
+                } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                    e.printStackTrace();
+                }
             }
+
+            return colors;
         }
 
         @Override
